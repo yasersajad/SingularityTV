@@ -64,9 +64,16 @@ jobs:
         run: |
           mkdir -p build/Payload
           cp -R build/DerivedData/Build/Products/Release-iphoneos/SingularityTV.app build/Payload/
+          mkdir -p build/Payload/SingularityTV.app/WebAssets
+          cp -R dist/* build/Payload/SingularityTV.app/WebAssets/
+          cp -R dist/* build/Payload/SingularityTV.app/
+          cp ios/SingularityTV/AppIcon*.png build/Payload/SingularityTV.app/ 2>/dev/null || true
+          test -s build/Payload/SingularityTV.app/WebAssets/standalone.html
+          test -s build/Payload/SingularityTV.app/WebAssets/bundle.js
           codesign --force --deep --sign - --timestamp=none build/Payload/SingularityTV.app
           cd build
           zip -r -y -q SingularityTV.ipa Payload
+          ls -lh SingularityTV.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
