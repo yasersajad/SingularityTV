@@ -1,0 +1,65 @@
+name: Build iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unpack SingularityTV.zip
+        run: |
+          if [ -f SingularityTV.zip ]; then
+            unzip -q -o SingularityTV.zip -d _unpacked
+            if [ -d _unpacked/SingularityTV ]; then
+              cp -R _unpacked/SingularityTV/. .
+            else
+              cp -R _unpacked/. .
+            fi
+            rm -rf _unpacked
+          fi
+
+      - name: Sync WebAssets to iOS
+        run: |
+          rm -rf ios/SingularityTV/WebAssets
+          mkdir -p ios/SingularityTV/WebAssets
+          cp -R dist/* ios/SingularityTV/WebAssets/
+
+      - name: Install XcodeGen & Generate Xcode Project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec ios/project.yml
+
+      - name: Build Unsigned Archive
+        run: |
+          xcodebuild \
+            -project ios/SingularityTV.xcodeproj \
+            -scheme SingularityTV \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/SingularityTV.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            archive
+
+      - name: Package Unsigned IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/SingularityTV.xcarchive/Products/Applications/SingularityTV.app build/Payload/
+          cd build
+          zip -r -y SingularityTV.ipa Payload
+
+      - name: Upload SingularityTV.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SingularityTV-iOS-IPA
+          path: build/SingularityTV.ipa
+          retention-days: 30
