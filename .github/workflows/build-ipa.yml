@@ -1,29 +1,36 @@
-name: Build iOS IPA
+name: Build APK & IPA
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-ipa:
     runs-on: macos-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Unpack SingularityTV.zip
+      - name: Unpack Project Archive
         run: |
-          if [ -f SingularityTV.zip ]; then
-            unzip -q -o SingularityTV.zip -d _unpacked
-            if [ -d _unpacked/SingularityTV ]; then
-              cp -R _unpacked/SingularityTV/. .
-            else
-              cp -R _unpacked/. .
+          for z in *.zip; do
+            if [ -f "$z" ]; then
+              unzip -q -o "$z" -d _unpacked
+              if [ -d _unpacked/SingularityTV ]; then
+                cp -R _unpacked/SingularityTV/. .
+              else
+                cp -R _unpacked/. .
+              fi
+              rm -rf _unpacked
             fi
-            rm -rf _unpacked
-          fi
+          done
 
       - name: Sync WebAssets to iOS
         run: |
@@ -31,35 +38,106 @@ jobs:
           mkdir -p ios/SingularityTV/WebAssets
           cp -R dist/* ios/SingularityTV/WebAssets/
 
-      - name: Install XcodeGen & Generate Xcode Project
+      - name: Generate Xcode Project
         run: |
-          brew install xcodegen
-          xcodegen generate --spec ios/project.yml
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          cd ios
+          xcodegen generate
 
-      - name: Build Unsigned Archive
+      - name: Build Unsigned iOS App
         run: |
           xcodebuild \
             -project ios/SingularityTV.xcodeproj \
             -scheme SingularityTV \
             -configuration Release \
             -sdk iphoneos \
-            -archivePath build/SingularityTV.xcarchive \
+            -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            archive
+            build
 
-      - name: Package Unsigned IPA
+      - name: Package Ad-Hoc Signed IPA
         run: |
           mkdir -p build/Payload
-          cp -R build/SingularityTV.xcarchive/Products/Applications/SingularityTV.app build/Payload/
+          cp -R build/DerivedData/Build/Products/Release-iphoneos/SingularityTV.app build/Payload/
+          codesign --force --deep --sign - --timestamp=none build/Payload/SingularityTV.app
           cd build
-          zip -r -y SingularityTV.ipa Payload
+          zip -r -y -q SingularityTV.ipa Payload
 
-      - name: Upload SingularityTV.ipa Artifact
+      - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SingularityTV-iOS-IPA
           path: build/SingularityTV.ipa
           retention-days: 30
+
+      - name: Publish IPA to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: SingularityTV Latest Build (IPA + APK)
+          files: build/SingularityTV.ipa
+          prerelease: false
+
+  build-apk:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unpack Project Archive
+        run: |
+          for z in *.zip; do
+            if [ -f "$z" ]; then
+              unzip -q -o "$z" -d _unpacked
+              if [ -d _unpacked/SingularityTV ]; then
+                cp -R _unpacked/SingularityTV/. .
+              else
+                cp -R _unpacked/. .
+              fi
+              rm -rf _unpacked
+            fi
+          done
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Build Universal Release APK
+        working-directory: android
+        run: gradle assembleUniversalRelease --no-daemon
+
+      - name: Collect APK
+        run: |
+          mkdir -p build
+          APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          cp "$APK_FILE" build/SingularityTV.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SingularityTV-Android-APK
+          path: build/SingularityTV.apk
+          retention-days: 30
+
+      - name: Publish APK to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: SingularityTV Latest Build (IPA + APK)
+          files: build/SingularityTV.apk
+          prerelease: false
