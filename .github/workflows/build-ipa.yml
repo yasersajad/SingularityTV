@@ -48,6 +48,8 @@ jobs:
 
       - name: Build Unsigned iOS App
         run: |
+          set -o pipefail
+          mkdir -p build
           xcodebuild \
             -project ios/SingularityTV.xcodeproj \
             -scheme SingularityTV \
@@ -58,7 +60,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             AD_HOC_CODE_SIGNING_ALLOWED=YES \
-            build
+            build 2>&1 | tee build/xcodebuild.log || (echo "=== SWIFT/XCODE ERRORS ===" && grep -n "error:" build/xcodebuild.log | head -n 30 && exit 1)
 
       - name: Package Ad-Hoc Signed IPA
         run: |
