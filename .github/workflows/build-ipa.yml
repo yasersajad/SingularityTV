@@ -8,9 +8,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-ipa:
-    runs-on: macos-latest
+    runs-on: macos-15
+    timeout-minutes: 25
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -94,6 +99,7 @@ jobs:
 
   build-apk:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -128,7 +134,10 @@ jobs:
 
       - name: Build Universal Release APK
         working-directory: android
-        run: gradle assembleUniversalRelease --no-daemon
+        run: |
+          set -o pipefail
+          mkdir -p ../build
+          gradle assembleUniversalRelease --no-daemon --console=plain 2>&1 | tee ../build/gradle.log || (echo '=== KOTLIN/GRADLE ERRORS ===' && (grep -n -E 'e: |error:|Unresolved|Type mismatch' ../build/gradle.log | head -n 40 || tail -n 50 ../build/gradle.log) && exit 1)
 
       - name: Collect APK
         run: |
