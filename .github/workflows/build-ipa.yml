@@ -2,7 +2,7 @@ name: Build APK & IPA
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, SingularityTV ]
   workflow_dispatch:
 
 permissions:
@@ -25,23 +25,29 @@ jobs:
 
       - name: Unpack Project Archive
         run: |
-          for z in *.zip; do
-            if [ -f "$z" ]; then
-              unzip -q -o "$z" -d _unpacked
-              if [ -d _unpacked/SingularityTV ]; then
-                cp -R _unpacked/SingularityTV/. .
-              else
-                cp -R _unpacked/. .
-              fi
-              rm -rf _unpacked
+          find . -maxdepth 3 -name "*.zip" -type f | while read -r z; do
+            unzip -q -o "$z" -d _unpacked
+            if [ -d _unpacked/SingularityTV ]; then
+              cp -R _unpacked/SingularityTV/. .
+            else
+              cp -R _unpacked/. .
             fi
+            rm -rf _unpacked
           done
 
       - name: Sync WebAssets to iOS
         run: |
-          rm -rf ios/SingularityTV/WebAssets
+          if [ ! -d dist ] && [ -f scripts/build-android-assets.js ]; then
+            node scripts/build-android-assets.js
+          fi
+          if [ ! -d dist ] && [ -d android/app/src/main/assets/public ]; then
+            mkdir -p dist
+            cp -R android/app/src/main/assets/public/* dist/
+          fi
           mkdir -p ios/SingularityTV/WebAssets
-          cp -R dist/* ios/SingularityTV/WebAssets/
+          if [ -d dist ] && [ "$(ls -A dist)" ]; then
+            cp -R dist/* ios/SingularityTV/WebAssets/
+          fi
 
       - name: Generate Xcode Project
         run: |
