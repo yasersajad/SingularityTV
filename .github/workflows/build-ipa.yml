@@ -115,16 +115,14 @@ jobs:
 
       - name: Unpack Project Archive
         run: |
-          for z in *.zip; do
-            if [ -f "$z" ]; then
-              unzip -q -o "$z" -d _unpacked
-              if [ -d _unpacked/SingularityTV ]; then
-                cp -R _unpacked/SingularityTV/. .
-              else
-                cp -R _unpacked/. .
-              fi
-              rm -rf _unpacked
+          find . -maxdepth 3 -name "*.zip" -type f | while read -r z; do
+            unzip -q -o "$z" -d _unpacked
+            if [ -d _unpacked/SingularityTV ]; then
+              cp -R _unpacked/SingularityTV/. .
+            else
+              cp -R _unpacked/. .
             fi
+            rm -rf _unpacked
           done
 
       - name: Setup JDK 17
