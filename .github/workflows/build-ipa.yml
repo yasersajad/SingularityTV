@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 25
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -25,15 +25,21 @@ jobs:
 
       - name: Unpack Project Archive
         run: |
-          find . -maxdepth 3 -name "*.zip" -type f | while read -r z; do
-            unzip -q -o "$z" -d _unpacked
+          ZIP_FILE=$(find . -maxdepth 3 -name "*.zip" -type f | sort -V | tail -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            APP_BASE=$(basename "$ZIP_FILE" .zip)
+            unzip -q -o "$ZIP_FILE" -d _unpacked
             if [ -d _unpacked/SingularityTV ]; then
               cp -R _unpacked/SingularityTV/. .
             else
               cp -R _unpacked/. .
             fi
             rm -rf _unpacked
-          done
+          else
+            APP_BASE="SingularityTV"
+          fi
+          echo "APP_BASE=$APP_BASE" >> "$GITHUB_ENV"
+          echo "Building IPA as: ${APP_BASE}.ipa"
 
       - name: Sync WebAssets to iOS
         run: |
@@ -85,22 +91,33 @@ jobs:
           test -s build/Payload/SingularityTV.app/WebAssets/bundle.js
           codesign --force --deep --sign - --timestamp=none build/Payload/SingularityTV.app
           cd build
-          zip -r -y -q SingularityTV.ipa Payload
-          ls -lh SingularityTV.ipa
+          zip -r -y -q "${APP_BASE}.ipa" Payload
+          ls -lh "${APP_BASE}.ipa"
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SingularityTV-iOS-IPA
-          path: build/SingularityTV.ipa
+          name: ${{ env.APP_BASE }}-iOS-IPA
+          path: build/${{ env.APP_BASE }}.ipa
           retention-days: 30
+
+      - name: Clean Old IPAs from Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OLD_ASSETS=$(gh release view latest --json assets --jq '.assets[].name' 2>/dev/null | grep -E '\.ipa$' || true)
+          for asset in $OLD_ASSETS; do
+            if [ "$asset" != "${APP_BASE}.ipa" ]; then
+              gh release delete-asset latest "$asset" --yes || true
+            fi
+          done
 
       - name: Publish IPA to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: SingularityTV Latest Build (IPA + APK)
-          files: build/SingularityTV.ipa
+          files: build/${{ env.APP_BASE }}.ipa
           prerelease: false
 
   build-apk:
@@ -115,15 +132,21 @@ jobs:
 
       - name: Unpack Project Archive
         run: |
-          find . -maxdepth 3 -name "*.zip" -type f | while read -r z; do
-            unzip -q -o "$z" -d _unpacked
+          ZIP_FILE=$(find . -maxdepth 3 -name "*.zip" -type f | sort -V | tail -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            APP_BASE=$(basename "$ZIP_FILE" .zip)
+            unzip -q -o "$ZIP_FILE" -d _unpacked
             if [ -d _unpacked/SingularityTV ]; then
               cp -R _unpacked/SingularityTV/. .
             else
               cp -R _unpacked/. .
             fi
             rm -rf _unpacked
-          done
+          else
+            APP_BASE="SingularityTV"
+          fi
+          echo "APP_BASE=$APP_BASE" >> "$GITHUB_ENV"
+          echo "Building APK as: ${APP_BASE}.apk"
 
       - name: Setup JDK 17
         uses: actions/setup-java@v4
@@ -147,19 +170,31 @@ jobs:
         run: |
           mkdir -p build
           APK_FILE=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          cp "$APK_FILE" build/SingularityTV.apk
+          cp "$APK_FILE" "build/${APP_BASE}.apk"
+          ls -lh "build/${APP_BASE}.apk"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SingularityTV-Android-APK
-          path: build/SingularityTV.apk
+          name: ${{ env.APP_BASE }}-Android-APK
+          path: build/${{ env.APP_BASE }}.apk
           retention-days: 30
+
+      - name: Clean Old APKs from Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OLD_ASSETS=$(gh release view latest --json assets --jq '.assets[].name' 2>/dev/null | grep -E '\.apk$' || true)
+          for asset in $OLD_ASSETS; do
+            if [ "$asset" != "${APP_BASE}.apk" ]; then
+              gh release delete-asset latest "$asset" --yes || true
+            fi
+          done
 
       - name: Publish APK to Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: SingularityTV Latest Build (IPA + APK)
-          files: build/SingularityTV.apk
+          files: build/${{ env.APP_BASE }}.apk
           prerelease: false
