@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   build-ipa:
-    runs-on: macos-26
+    runs-on: macos-15
     timeout-minutes: 25
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
