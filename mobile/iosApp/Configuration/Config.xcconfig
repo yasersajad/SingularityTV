@@ -1,6 +1,0 @@
-#include? "Version.xcconfig"
-
-TEAM_ID=
-
-PRODUCT_NAME=SingularityTV
-PRODUCT_BUNDLE_IDENTIFIER=com.singularity.tv$(TEAM_ID)
