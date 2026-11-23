@@ -34,6 +34,9 @@ jobs:
       KOTLIN_DAEMON_JVMARGS: -Xmx2048M
       NUVIO_GRADLE_JVMARGS: -Xmx4608M -Dfile.encoding=UTF-8 -XX:MaxMetaspaceSize=768M
       NUVIO_KOTLIN_NATIVE_JVMARGS: -Xmx4608M
+  build-android-mobile:
+    name: Build Android Mobile APK
+    runs-on: ubuntu-latest
 =======
   build-android-mobile:
     name: Build Android Mobile APK
@@ -317,6 +320,7 @@ jobs:
             --title "SingularityTV v${APP_VERSION}" \
 <<<<<<< HEAD
             --notes "SingularityTV v${APP_VERSION} Unified Release (iOS, Android Mobile & Android TV)" \
+            --notes "SingularityTV v${APP_VERSION} Unified Release (Android Mobile, Android TV & iOS)" \
 =======
             --notes "SingularityTV v${APP_VERSION} Unified Release (Android Mobile, Android TV & iOS)" \
 >>>>>>> main
