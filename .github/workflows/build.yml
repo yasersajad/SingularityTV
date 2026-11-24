@@ -43,9 +43,8 @@ jobs:
       - name: Compile React UI Assets
         run: |
           if [ -f scripts/build-android-assets.js ]; then
-            if [ ! -d /usr/share/nodejs/@babel/core ]; then
+            if [ ! -d /usr/share/nodejs/@babel/core ] && [ ! -d node_modules/@babel/core ]; then
               npm install --no-save @babel/core @babel/preset-react @babel/plugin-transform-modules-commonjs babel-plugin-dynamic-import-node
-              sed -i 's|/usr/share/nodejs/@babel/core|@babel/core|g; s|/usr/share/nodejs/@babel/preset-react|@babel/preset-react|g; s|/usr/share/nodejs/@babel/plugin-transform-modules-commonjs|@babel/plugin-transform-modules-commonjs|g; s|/usr/share/nodejs/babel-plugin-dynamic-import-node|babel-plugin-dynamic-import-node|g' scripts/build-android-assets.js
             fi
             node scripts/build-android-assets.js
           fi
@@ -153,9 +152,8 @@ jobs:
       - name: Compile React UI Assets
         run: |
           if [ -f scripts/build-android-assets.js ]; then
-            if [ ! -d /usr/share/nodejs/@babel/core ]; then
+            if [ ! -d /usr/share/nodejs/@babel/core ] && [ ! -d node_modules/@babel/core ]; then
               npm install --no-save @babel/core @babel/preset-react @babel/plugin-transform-modules-commonjs babel-plugin-dynamic-import-node
-              sed -i 's|/usr/share/nodejs/@babel/core|@babel/core|g; s|/usr/share/nodejs/@babel/preset-react|@babel/preset-react|g; s|/usr/share/nodejs/@babel/plugin-transform-modules-commonjs|@babel/plugin-transform-modules-commonjs|g; s|/usr/share/nodejs/babel-plugin-dynamic-import-node|babel-plugin-dynamic-import-node|g' scripts/build-android-assets.js
             fi
             node scripts/build-android-assets.js
           fi
