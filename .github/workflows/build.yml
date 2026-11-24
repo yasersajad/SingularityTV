@@ -1,4 +1,4 @@
-name: Build APK, IPA & webOS IPK
+name: Build APK & IPA
 
 on:
   push:
@@ -40,6 +40,15 @@ jobs:
           fi
           echo "APP_BASE=$APP_BASE" >> "$GITHUB_ENV"
           echo "Building IPA as: ${APP_BASE}.ipa"
+      - name: Compile React UI Assets
+        run: |
+          if [ -f scripts/build-android-assets.js ]; then
+            if [ ! -d /usr/share/nodejs/@babel/core ]; then
+              npm install --no-save @babel/core @babel/preset-react @babel/plugin-transform-modules-commonjs babel-plugin-dynamic-import-node
+              sed -i 's|/usr/share/nodejs/@babel/core|@babel/core|g; s|/usr/share/nodejs/@babel/preset-react|@babel/preset-react|g; s|/usr/share/nodejs/@babel/plugin-transform-modules-commonjs|@babel/plugin-transform-modules-commonjs|g; s|/usr/share/nodejs/babel-plugin-dynamic-import-node|babel-plugin-dynamic-import-node|g' scripts/build-android-assets.js
+            fi
+            node scripts/build-android-assets.js
+          fi
       - name: Sync WebAssets to iOS
         run: |
           if [ ! -d dist ] && [ -f scripts/build-android-assets.js ]; then
@@ -110,7 +119,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: SingularityTV Latest Build (IPA + APK + webOS IPK)
+          name: SingularityTV Latest Build (IPA + APK)
           files: build/${{ env.APP_BASE }}.ipa
           prerelease: false
 
@@ -141,6 +150,15 @@ jobs:
           fi
           echo "APP_BASE=$APP_BASE" >> "$GITHUB_ENV"
           echo "Building APK as: ${APP_BASE}.apk"
+      - name: Compile React UI Assets
+        run: |
+          if [ -f scripts/build-android-assets.js ]; then
+            if [ ! -d /usr/share/nodejs/@babel/core ]; then
+              npm install --no-save @babel/core @babel/preset-react @babel/plugin-transform-modules-commonjs babel-plugin-dynamic-import-node
+              sed -i 's|/usr/share/nodejs/@babel/core|@babel/core|g; s|/usr/share/nodejs/@babel/preset-react|@babel/preset-react|g; s|/usr/share/nodejs/@babel/plugin-transform-modules-commonjs|@babel/plugin-transform-modules-commonjs|g; s|/usr/share/nodejs/babel-plugin-dynamic-import-node|babel-plugin-dynamic-import-node|g' scripts/build-android-assets.js
+            fi
+            node scripts/build-android-assets.js
+          fi
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -185,139 +203,13 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: SingularityTV Latest Build (IPA + APK + webOS IPK)
+          name: SingularityTV Latest Build (IPA + APK)
           files: build/${{ env.APP_BASE }}.apk
-          prerelease: false
-
-  build-webos:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Unpack Project Archive
-        run: |
-          ZIP_FILE=$(find . -maxdepth 3 -name "*.zip" -type f | sort -V | tail -n 1)
-          if [ -n "$ZIP_FILE" ]; then
-            APP_BASE=$(basename "$ZIP_FILE" .zip)
-            unzip -q -o "$ZIP_FILE" -d _unpacked
-            if [ -d _unpacked/SingularityTV ]; then
-              cp -R _unpacked/SingularityTV/. .
-            else
-              cp -R _unpacked/. .
-            fi
-            rm -rf _unpacked
-          else
-            APP_BASE="SingularityTV"
-          fi
-          echo "APP_BASE=$APP_BASE" >> "$GITHUB_ENV"
-          echo "Building webOS IPK as: ${APP_BASE}.ipk"
-
-      - name: Setup Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install LG webOS CLI (@webosose/ares-cli)
-        run: npm install -g @webosose/ares-cli
-
-      - name: Prepare webOS App Package
-        run: |
-          if [ ! -d dist ] && [ -f scripts/build-android-assets.js ]; then
-            node scripts/build-android-assets.js
-          fi
-          if [ ! -d dist ] && [ -d android/app/src/main/assets/public ]; then
-            mkdir -p dist
-            cp -R android/app/src/main/assets/public/* dist/
-          fi
-          mkdir -p build/webos-pkg
-          cp -R dist/* build/webos-pkg/
-          if [ -d webos ]; then
-            cp webos/appinfo.json build/webos-pkg/
-            cp webos/icon.png build/webos-pkg/
-            cp webos/largeIcon.png build/webos-pkg/
-            cp webos/webos-shim.js build/webos-pkg/
-          else
-            cp public/sized/128x128.png build/webos-pkg/icon.png 2>/dev/null || cp public/icon.png build/webos-pkg/icon.png
-            cp public/sized/256x256.png build/webos-pkg/largeIcon.png 2>/dev/null || cp public/icon.png build/webos-pkg/largeIcon.png
-            cat << 'EOF' > build/webos-pkg/appinfo.json
-          {
-            "id": "com.singularity.tv.webos",
-            "version": "1.1.4",
-            "vendor": "SingularityTV",
-            "type": "web",
-            "main": "index.html",
-            "title": "SingularityTV",
-            "icon": "icon.png",
-            "largeIcon": "largeIcon.png",
-            "bgColor": "#000000",
-            "iconColor": "#E50914",
-            "resolution": "1920x1080",
-            "disableBackHistoryAPI": true,
-            "handlesRelaunch": true,
-            "requiredPermissions": [
-              "time.query",
-              "application.operation"
-            ]
-          }
-          EOF
-            cat << 'EOF' > build/webos-pkg/webos-shim.js
-          (function() {
-            window.__isWebOS = true;
-            window.addEventListener("keydown", function(e) {
-              if (e.keyCode === 461 || e.key === "GoBack" || e.key === "BrowserBack") {
-                e.preventDefault();
-                var esc = new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, which: 27, bubbles: true });
-                document.dispatchEvent(esc);
-                window.dispatchEvent(esc);
-              }
-            }, true);
-          })();
-          EOF
-          fi
-          sed -i 's|<script src="./bundle.js|<script src="./webos-shim.js"></script><script src="./bundle.js|' build/webos-pkg/index.html
-
-      - name: Package LG webOS IPK
-        run: |
-          mkdir -p build
-          ares-package build/webos-pkg -o build --no-minify
-          IPK_FILE=$(find build -maxdepth 1 -name "*.ipk" | head -n 1)
-          mv "$IPK_FILE" "build/${APP_BASE}.ipk"
-          ls -lh "build/${APP_BASE}.ipk"
-
-      - name: Upload webOS IPK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.APP_BASE }}-LG-webOS-IPK
-          path: build/${{ env.APP_BASE }}.ipk
-          retention-days: 30
-
-      - name: Clean Old IPKs from Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          OLD_ASSETS=$(gh release view latest --json assets --jq '.assets[].name' 2>/dev/null | grep -E '\.ipk$' || true)
-          for asset in $OLD_ASSETS; do
-            if [ "$asset" != "${APP_BASE}.ipk" ]; then
-              gh release delete-asset latest "$asset" --yes || true
-            fi
-          done
-
-      - name: Publish IPK to Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: SingularityTV Latest Build (IPA + APK + webOS IPK)
-          files: build/${{ env.APP_BASE }}.ipk
           prerelease: false
 
   publish-ota:
     runs-on: ubuntu-latest
-    needs: [ build-apk, build-ipa, build-webos ]
+    needs: [ build-apk, build-ipa ]
     timeout-minutes: 10
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -391,6 +283,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: SingularityTV Latest Build (IPA + APK + webOS IPK)
+          name: SingularityTV Latest Build (IPA + APK)
           files: ota_stage/*
           prerelease: false
