@@ -1,0 +1,105 @@
+name: Stable Release Metadata
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Stable release tag, for example v1.0.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stable-release-metadata-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update stable release metadata
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release metadata
+        id: release
+        shell: bash
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag_name="$INPUT_TAG_NAME"
+          else
+            tag_name="$GITHUB_REF_NAME"
+          fi
+
+          if [[ ! "$tag_name" =~ ^v[0-9]+[.][0-9]+([.][0-9]+)?$ ]]; then
+            echo "::error::Stable release tags must look like v1.0 or v1.0.0."
+            exit 1
+          fi
+
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+          echo "marketing_version=${tag_name#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create manual release tag
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          if git rev-parse -q --verify "refs/tags/$TAG_NAME" > /dev/null; then
+            tag_sha="$(git rev-list -n 1 "$TAG_NAME")"
+
+            if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "::error::Tag $TAG_NAME already exists at $tag_sha, not this commit $GITHUB_SHA."
+              exit 1
+            fi
+          else
+            git tag "$TAG_NAME" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG_NAME"
+          fi
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          release_body="<!-- intentionally blank -->"
+
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --title "$TAG_NAME" --notes "$release_body" --latest
+          else
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "$release_body" --latest --verify-tag
+          fi
+
+      - name: Checkout default branch for release metadata
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Update latest release metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+          APP_VERSION: ${{ steps.release.outputs.marketing_version }}
+          COMMIT_CHANGES: "true"
+          PUSH_BRANCH: ${{ github.event.repository.default_branch }}
+        run: ci/update-release-metadata.sh

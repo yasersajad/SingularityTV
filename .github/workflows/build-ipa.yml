@@ -1,1 +1,188 @@
+name: Build SingularityTV IPA from ZIP
 
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-singularitytv-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ipa:
+    name: Build Unsigned SingularityTV IPA
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Locate source ZIP deterministically
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          candidates=()
+          if [[ -f "SingularityTV-source.zip" ]]; then
+            candidates+=("SingularityTV-source.zip")
+          elif [[ -f "source/SingularityTV-source.zip" ]]; then
+            candidates+=("source/SingularityTV-source.zip")
+          else
+            while IFS= read -r -d '' file; do
+              candidates+=("$file")
+            done < <(find . -maxdepth 2 -type f -name "*.zip" -not -path "./.git/*" -print0)
+          fi
+
+          if [[ ${#candidates[@]} -eq 0 ]]; then
+            echo "::error::No source ZIP archive found in repository root or source/."
+            exit 1
+          fi
+
+          if [[ ${#candidates[@]} -gt 1 ]]; then
+            echo "::error::Multiple ZIP archives found (${candidates[*]}). Keep only one ZIP (e.g. SingularityTV-source.zip) to ensure a deterministic build."
+            exit 1
+          fi
+
+          zip_path="${candidates[0]}"
+          echo "Using source archive: $zip_path"
+          echo "zip_path=$zip_path" >> "$GITHUB_OUTPUT"
+
+      - name: Extract source ZIP and detect Xcode project root
+        id: extract
+        shell: bash
+        env:
+          ZIP_PATH: ${{ steps.locate.outputs.zip_path }}
+        run: |
+          set -euo pipefail
+
+          extract_dir="$RUNNER_TEMP/singularitytv-src"
+          rm -rf "$extract_dir"
+          mkdir -p "$extract_dir"
+          unzip -q -o "$ZIP_PATH" -d "$extract_dir"
+
+          xcodeproj_path="$(find "$extract_dir" -maxdepth 4 -type d -name "*.xcodeproj" | head -n 1 || true)"
+          if [[ -z "$xcodeproj_path" ]]; then
+            echo "::error::Could not locate any .xcodeproj inside $ZIP_PATH."
+            exit 1
+          fi
+
+          project_root="$(dirname "$xcodeproj_path")"
+          project_name="$(basename "$xcodeproj_path")"
+          echo "Detected project root: $project_root ($project_name)"
+
+          for required in "NightFlix/NightFlixApp.swift" "NightFlix/Assets.xcassets/AppIcon.appiconset/Contents.json" "LaunchScreen.storyboard"; do
+            if [[ ! -f "$project_root/$required" ]]; then
+              echo "::error::Missing required project file: $project_root/$required"
+              exit 1
+            fi
+          done
+
+          echo "project_root=$project_root" >> "$GITHUB_OUTPUT"
+          echo "project_name=$project_name" >> "$GITHUB_OUTPUT"
+
+      - name: Select Xcode and inspect scheme
+        shell: bash
+        working-directory: ${{ steps.extract.outputs.project_root }}
+        env:
+          PROJECT_NAME: ${{ steps.extract.outputs.project_name }}
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -list -project "$PROJECT_NAME"
+
+      - name: Build and package unsigned SingularityTV.ipa
+        id: package
+        shell: bash
+        working-directory: ${{ steps.extract.outputs.project_root }}
+        env:
+          PROJECT_NAME: ${{ steps.extract.outputs.project_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+
+          archive_path="$RUNNER_TEMP/SingularityTV.xcarchive"
+          payload_dir="$RUNNER_TEMP/Payload"
+          dist_dir="$RUNNER_TEMP/dist"
+          ipa_path="$dist_dir/SingularityTV.ipa"
+
+          rm -rf "$archive_path" "$payload_dir" "$dist_dir"
+          mkdir -p "$payload_dir" "$dist_dir"
+
+          xcodebuild archive \
+            -project "$PROJECT_NAME" \
+            -scheme "NightFlix" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$archive_path" \
+            PRODUCT_NAME=SingularityTV \
+            PRODUCT_BUNDLE_IDENTIFIER=com.singularity.tv \
+            MARKETING_VERSION=3.0.0 \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+          app_path="$(find "$archive_path/Products/Applications" -maxdepth 1 -type d -name "*.app" | head -n 1 || true)"
+          if [[ -z "$app_path" || ! -d "$app_path" ]]; then
+            echo "::error::Built .app bundle not found in $archive_path/Products/Applications."
+            exit 1
+          fi
+
+          ditto "$app_path" "$payload_dir/SingularityTV.app"
+
+          if [[ ! -f "$payload_dir/SingularityTV.app/Info.plist" ]]; then
+            echo "::error::Missing Info.plist inside SingularityTV.app."
+            exit 1
+          fi
+
+          if [[ ! -f "$payload_dir/SingularityTV.app/Assets.car" ]]; then
+            echo "::warning::Assets.car not found; verifying icon PNGs directly."
+            ls -la "$payload_dir/SingularityTV.app"
+          fi
+
+          (
+            cd "$RUNNER_TEMP"
+            zip -qry "$ipa_path" Payload
+          )
+
+          if [[ ! -s "$ipa_path" ]]; then
+            echo "::error::Generated SingularityTV.ipa is missing or empty."
+            exit 1
+          fi
+
+          ls -lh "$ipa_path"
+          echo "ipa_path=$ipa_path" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SingularityTV.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SingularityTV-ipa
+          path: ${{ steps.package.outputs.ipa_path }}
+          if-no-files-found: error
+
+      - name: Publish SingularityTV.ipa to latest Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IPA_PATH: ${{ steps.package.outputs.ipa_path }}
+        run: |
+          set -euo pipefail
+
+          tag="latest"
+          notes="Automated unsigned iOS build of SingularityTV. Install using a compatible iOS signing method (e.g., AltStore, SideStore, Sideloadly, or Feather)."
+
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" "$IPA_PATH" --clobber
+          else
+            gh release create "$tag" "$IPA_PATH" \
+              --title "SingularityTV Latest" \
+              --notes "$notes"
+          fi

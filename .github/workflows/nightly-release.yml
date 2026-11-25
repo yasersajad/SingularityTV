@@ -1,0 +1,72 @@
+name: Nightly Release Metadata
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-release-metadata
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Publish nightly prerelease metadata
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare nightly metadata
+        id: nightly
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_date="$(date -u +%Y%m%d)"
+          short_sha="$(git rev-parse --short=7 HEAD)"
+          tag_name="nightly-${run_date}-${short_sha}"
+
+          echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
+
+      - name: Create nightly tag
+        shell: bash
+        env:
+          TAG_NAME: ${{ steps.nightly.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+
+          git fetch --tags --force
+
+          if git rev-parse -q --verify "refs/tags/$TAG_NAME" > /dev/null; then
+            tag_sha="$(git rev-list -n 1 "$TAG_NAME")"
+
+            if [[ "$tag_sha" != "$GITHUB_SHA" ]]; then
+              echo "::error::Tag $TAG_NAME already exists at $tag_sha, not this commit $GITHUB_SHA."
+              exit 1
+            fi
+          else
+            git tag "$TAG_NAME" "$GITHUB_SHA"
+            git push origin "refs/tags/$TAG_NAME"
+          fi
+
+      - name: Publish nightly prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ steps.nightly.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          release_body="<!-- intentionally blank -->"
+
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --title "$TAG_NAME" --notes "$release_body" --prerelease
+          else
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "$release_body" --prerelease --verify-tag
+          fi
