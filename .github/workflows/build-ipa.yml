@@ -115,6 +115,7 @@ jobs:
           rm -rf "$archive_path" "$payload_dir" "$dist_dir"
           mkdir -p "$payload_dir" "$dist_dir"
 
+          set +e
           xcodebuild archive \
             -project "$PROJECT_NAME" \
             -scheme "NightFlix" \
@@ -128,7 +129,17 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+            DEVELOPMENT_TEAM="" > "$RUNNER_TEMP/xcodebuild.log" 2>&1
+          xb_status=$?
+          set -e
+
+          if [[ $xb_status -ne 0 ]]; then
+            echo "=== Swift/Xcode Errors ==="
+            grep -E "error:|fatal error:" "$RUNNER_TEMP/xcodebuild.log" | head -n 60 || true
+            echo "=== Tail of xcodebuild.log ==="
+            tail -n 60 "$RUNNER_TEMP/xcodebuild.log" || true
+            exit $xb_status
+          fi
 
           app_path="$(find "$archive_path/Products/Applications" -maxdepth 1 -type d -name "*.app" | head -n 1 || true)"
           if [[ -z "$app_path" || ! -d "$app_path" ]]; then
@@ -160,6 +171,14 @@ jobs:
 
           ls -lh "$ipa_path"
           echo "ipa_path=$ipa_path" >> "$GITHUB_OUTPUT"
+
+      - name: Upload SingularityTV dSYMs Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SingularityTV-dSYMs
+          path: ${{ runner.temp }}/SingularityTV.xcarchive/dSYMs
+          if-no-files-found: ignore
 
       - name: Upload SingularityTV.ipa Artifact
         uses: actions/upload-artifact@v4
