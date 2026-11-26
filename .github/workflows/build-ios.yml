@@ -1,0 +1,125 @@
+name: Build SingularityTV iOS (IPA & TIPA)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    name: Build SingularityTV iOS 1.1.6 (IPA + TIPA)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Locate source ZIP or direct project
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d "Singularity.xcodeproj" ]]; then
+            echo "project_root=$PWD" >> "$GITHUB_OUTPUT"
+            echo "project_name=Singularity.xcodeproj" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          zip_path="$(find . -maxdepth 2 -type f -name "*.zip" -not -path "./.git/*" | head -n 1 || true)"
+          if [[ -z "$zip_path" ]]; then
+            echo "::error::No Singularity.xcodeproj or source ZIP found."
+            exit 1
+          fi
+          extract_dir="$RUNNER_TEMP/singularitytv-src"
+          rm -rf "$extract_dir" && mkdir -p "$extract_dir"
+          unzip -q -o "$zip_path" -d "$extract_dir"
+          xcodeproj_path="$(find "$extract_dir" -maxdepth 4 -type d -name "*.xcodeproj" | head -n 1 || true)"
+          if [[ -z "$xcodeproj_path" ]]; then
+            echo "::error::Could not locate .xcodeproj inside $zip_path"
+            exit 1
+          fi
+          echo "project_root=$(dirname "$xcodeproj_path")" >> "$GITHUB_OUTPUT"
+          echo "project_name=$(basename "$xcodeproj_path")" >> "$GITHUB_OUTPUT"
+
+      - name: Build Release Archive
+        working-directory: ${{ steps.locate.outputs.project_root }}
+        env:
+          PROJECT_NAME: ${{ steps.locate.outputs.project_name }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          archive_path="$RUNNER_TEMP/SingularityTV.xcarchive"
+          rm -rf "$archive_path"
+          xcodebuild archive \
+            -project "$PROJECT_NAME" \
+            -scheme "Singularity" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$archive_path" \
+            PRODUCT_NAME=SingularityTV \
+            PRODUCT_BUNDLE_IDENTIFIER=com.singularity.tv \
+            MARKETING_VERSION=1.1.6 \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Install ldid for TrollStore TIPA signing
+        run: brew install ldid
+
+      - name: Package SingularityTV-iOS-1.1.6.ipa and SingularityTV-iOS-1.1.6.tipa
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive_path="$RUNNER_TEMP/SingularityTV.xcarchive"
+          app_path="$(find "$archive_path/Products/Applications" -maxdepth 1 -type d -name "*.app" | head -n 1)"
+          dist_dir="$RUNNER_TEMP/dist/iOS"
+          rm -rf "$dist_dir" && mkdir -p "$dist_dir"
+
+          ipa_payload="$RUNNER_TEMP/ipa_work/Payload"
+          rm -rf "$RUNNER_TEMP/ipa_work" && mkdir -p "$ipa_payload"
+          ditto "$app_path" "$ipa_payload/SingularityTV.app"
+          (cd "$RUNNER_TEMP/ipa_work" && zip -qry "$dist_dir/SingularityTV-iOS-1.1.6.ipa" Payload)
+
+          tipa_payload="$RUNNER_TEMP/tipa_work/Payload"
+          rm -rf "$RUNNER_TEMP/tipa_work" && mkdir -p "$tipa_payload"
+          ditto "$app_path" "$tipa_payload/SingularityTV.app"
+
+          cat > "$RUNNER_TEMP/tipa_work/entitlements.plist" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>application-identifier</key>
+            <string>SINGULARITY.com.singularity.tv</string>
+            <key>get-task-allow</key>
+            <false/>
+          </dict>
+          </plist>
+          PLIST
+
+          ldid -S"$RUNNER_TEMP/tipa_work/entitlements.plist" "$tipa_payload/SingularityTV.app"
+          (cd "$RUNNER_TEMP/tipa_work" && zip -qry "$dist_dir/SingularityTV-iOS-1.1.6.tipa" Payload)
+
+          ls -lh "$dist_dir"
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SingularityTV-iOS-1.1.6
+          path: ${{ runner.temp }}/dist/iOS
+          if-no-files-found: error
+
+      - name: Upload dSYMs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SingularityTV-iOS-1.1.6-dSYMs
+          path: ${{ runner.temp }}/SingularityTV.xcarchive/dSYMs
+          if-no-files-found: ignore

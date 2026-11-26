@@ -1,0 +1,20 @@
+name: SingularityTV 1.1.6 — Combined Four-Platform Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ios:
+    uses: ./.github/workflows/build-ios.yml
+
+  android-mobile:
+    uses: ./.github/workflows/build-android-mobile.yml
+
+  android-tv:
+    uses: ./.github/workflows/build-android-tv.yml
+
+  windows-x64:
+    uses: ./.github/workflows/build-windows-x64.yml
+
+  windows-arm64:
+    uses: ./.github/workflows/build-windows-arm64.yml

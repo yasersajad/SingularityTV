@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build-ipa:
     name: Build Unsigned SingularityTV IPA
-    runs-on: macos-26
+    runs-on: macos-15
 
     steps:
       - name: Checkout repository
@@ -124,7 +124,7 @@ jobs:
             -archivePath "$archive_path" \
             PRODUCT_NAME=SingularityTV \
             PRODUCT_BUNDLE_IDENTIFIER=com.singularity.tv \
-            MARKETING_VERSION=3.0.0 \
+            MARKETING_VERSION=1.1.6 \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
