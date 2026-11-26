@@ -312,7 +312,7 @@ jobs:
           path: ${{ steps.src.outputs.root }}\installer\output\SingularityTV-Desktop-1.1.6-Windows-ARM64.exe
 
   bundle-release:
-    name: Package SingularityTV-1.1.6 Combined Artifact
+    name: Package & Publish SingularityTV-1.1.6 Release
     needs: [ios, android-mobile, android-tv, windows-x64, windows-x86, windows-arm64]
     if: always()
     runs-on: ubuntu-latest
@@ -326,3 +326,18 @@ jobs:
         with:
           name: SingularityTV-1.1.6-All-Platforms
           path: SingularityTV-1.1.6
+
+      - name: Publish to GitHub Release (v1.1.6)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v1.1.6"
+          if ! gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "$tag"               --repo "${{ github.repository }}"               --title "SingularityTV v1.1.6"               --notes "SingularityTV v1.1.6 Multi-Platform Release (iOS IPA/TIPA, Android Mobile, Android TV, Windows Desktop x64/x86/ARM64)."
+          fi
+          mapfile -t assets < <(find SingularityTV-1.1.6 -type f \( -name "*.ipa" -o -name "*.tipa" -o -name "*.apk" -o -name "*.aab" -o -name "*.exe" \))
+          if [[ ${#assets[@]} -gt 0 ]]; then
+            gh release upload "$tag" "${assets[@]}" --repo "${{ github.repository }}" --clobber
+          fi
