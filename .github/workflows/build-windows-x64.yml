@@ -2,10 +2,6 @@ name: Build SingularityTV Windows x64 (1.1.6)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 jobs:
   build-windows-x64:

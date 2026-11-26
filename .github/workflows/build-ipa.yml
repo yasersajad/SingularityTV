@@ -2,10 +2,6 @@ name: Build SingularityTV IPA from ZIP
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 permissions:
   contents: write

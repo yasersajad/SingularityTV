@@ -2,10 +2,6 @@ name: Build SingularityTV Windows ARM64 (1.1.6)
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
 
 jobs:
   build-windows-arm64:
