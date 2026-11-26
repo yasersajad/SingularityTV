@@ -16,5 +16,8 @@ jobs:
   windows-x64:
     uses: ./.github/workflows/build-windows-x64.yml
 
+  windows-x86:
+    uses: ./.github/workflows/build-windows-x86.yml
+
   windows-arm64:
     uses: ./.github/workflows/build-windows-arm64.yml

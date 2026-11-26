@@ -1,0 +1,32 @@
+name: Build SingularityTV Windows x86 (1.1.6)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-x86:
+    name: Build Windows Desktop x86 Installer
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish Self-Contained WinUI 3 (win-x86)
+        working-directory: windows/SingularityTV.Desktop
+        run: |
+          dotnet publish -c Release -r win-x86 -p:Platform=x86 --self-contained true
+
+      - name: Build Inno Setup Installer (x86)
+        shell: cmd
+        run: |
+          iscc /DARCH=x86 windows\installer\SingularityTV.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SingularityTV-Windows-x86-1.1.6
+          path: windows/installer/output/SingularityTV-Desktop-1.1.6-Windows-x86.exe
+          if-no-files-found: error

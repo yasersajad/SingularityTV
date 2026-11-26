@@ -122,8 +122,12 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      - name: Accept Android SDK Licenses
+        shell: bash
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
 
       - name: Build Android Mobile Release
         working-directory: ${{ steps.src.outputs.root }}
@@ -172,8 +176,12 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      - name: Accept Android SDK Licenses
+        shell: bash
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
 
       - name: Build Android TV Release
         working-directory: ${{ steps.src.outputs.root }}
@@ -231,6 +239,42 @@ jobs:
           name: Windows-x64-Release
           path: ${{ steps.src.outputs.root }}\installer\output\SingularityTV-Desktop-1.1.6-Windows-x64.exe
 
+  windows-x86:
+    name: Windows Desktop x86 (EXE)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate source root
+        id: src
+        shell: pwsh
+        run: |
+          if (Test-Path "windows") {
+            "root=$PWD\windows" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            exit 0
+          }
+          $zip = Get-ChildItem -Path . -Filter *.zip -File | Select-Object -First 1
+          $ext = "$env:RUNNER_TEMP\src"
+          Expand-Archive -Path $zip.FullName -DestinationPath $ext -Force
+          $win = Get-ChildItem -Path $ext -Directory -Filter "windows" -Recurse | Select-Object -First 1
+          "root=$($win.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish & Build x86 Installer
+        shell: pwsh
+        run: |
+          $winRoot = "${{ steps.src.outputs.root }}"
+          dotnet publish "$winRoot\SingularityTV.Desktop\SingularityTV.Desktop.csproj" -c Release -r win-x86 -p:Platform=x86 --self-contained true
+          iscc /DARCH=x86 "$winRoot\installer\SingularityTV.iss"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x86-Release
+          path: ${{ steps.src.outputs.root }}\installer\output\SingularityTV-Desktop-1.1.6-Windows-x86.exe
+
   windows-arm64:
     name: Windows Desktop ARM64 (EXE)
     runs-on: windows-latest
@@ -269,7 +313,7 @@ jobs:
 
   bundle-release:
     name: Package SingularityTV-1.1.6 Combined Artifact
-    needs: [ios, android-mobile, android-tv, windows-x64, windows-arm64]
+    needs: [ios, android-mobile, android-tv, windows-x64, windows-x86, windows-arm64]
     if: always()
     runs-on: ubuntu-latest
     steps:
